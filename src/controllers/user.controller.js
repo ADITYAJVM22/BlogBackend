@@ -7,6 +7,25 @@ import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { deleteLocalFiles } from "../utils/deleteLocalFiles.js";
 
+const generateRefreshAndAccessToken=async(userId)=>{
+    try {
+        const user=await User.findById(userId)
+        if (!user) {
+            throw new ApiError(404, "User not found in token generation");
+        }
+        const accessToken = await user.generateAccessToken()
+        const refreshToken = await user.generateRefreshToken()
+        // add refresh token to data base aswell do no need to relogin again
+        user.refreshToken=refreshToken
+        //SAVING can give error as password is not passed here
+        await user.save({ validateBeforeSave: false })
+
+        return {accessToken, refreshToken}
+    } catch (error) {
+        console.error("Token generation error:", error);
+        throw new ApiError(500,"Something went wrong")
+    }
+}
 
 const registerUser=asyncHandler(async(req,res)=>{
     //getting data
@@ -57,5 +76,49 @@ const registerUser=asyncHandler(async(req,res)=>{
 
 })
 
+const loginUser=asyncHandler(async(req,res)=>{
+    const {email,username,password}=req.body;
 
-export {registerUser}
+    if(!email && !username){
+        throw new ApiError(400,"Username or email is required")
+    }
+
+    const user=await User.findOne({
+        $or:[{username},{email}]
+    })
+    if(!user){
+        throw new ApiError(401,"User with this email or username doesn't exits")
+    }
+
+    const isPasswordVaild=await user.isPasswordCorrect(password)
+    if(!isPasswordVaild){
+        throw new ApiError(400,"Incorrect Password")
+    }
+
+    const {accessToken,refreshToken}=await generateRefreshAndAccessToken(user._id)
+
+    const loggedUser=await User.findById(user._id).select("-password -refreshToken")
+
+    const options={
+        httpOnly:true,
+        secure:true
+    }
+
+    return res.status(200)
+    .cookie("accessToken",accessToken,options)
+    .cookie("refreshToken",refreshToken,options)
+    .json(
+        new ApiResponse(
+            200,
+            {
+                user:loggedUser,
+                accessToken,
+                refreshToken
+            },
+            "User logged in Successfully!!"
+            
+        )
+    )
+})
+
+export {registerUser,loginUser}
