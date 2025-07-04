@@ -147,4 +147,46 @@ const logoutUser=asyncHandler(async(req,res)=>{
     ))
 })
 
-export {registerUser,loginUser,logoutUser}
+// refreshing accesstoken after expiry to avoid re login
+const refreshAccessToken=asyncHandler(async(req,res)=>{
+    const incomingRefreshToken=req.cookies.refreshToken||req.body.refreshToken
+    if(!incomingRefreshToken){
+        throw new ApiError(401,"Unauthorized access")
+    }
+    
+    try {
+        const decodedToken=jwt.verify(incomingRefreshToken,process.env.REFRESH_TOKEN_SECRET)
+        if(!decodedToken){
+            throw new ApiError(401,"Invalid refreshToken")
+        }
+        const user=await User.findById(decodedToken?._id)
+        if(!user){
+            throw new ApiError(401,"Invalid refreshToken")
+        }
+        if(incomingRefreshToken!=user.refreshToken){
+            throw new ApiError(400,"RefreshToken is expired or used")
+        }
+    
+        const options={
+            httpOnly:true,
+            secure:true
+        }
+        const {accessToken,newrefreshToken}=await generateRefreshAndAccessToken(user._id)
+    
+        return res.status(200)
+        .cookie("accessToken",accessToken,options)
+        .cookie("refreshToken",newrefreshToken,options)
+        .json(new ApiResponse(
+            201,
+            {
+                accessToken,
+                refreshToken:newrefreshToken
+            },
+            "AccessToken is refreshed or regenerated"
+        ))
+    } catch (error) {
+        throw new ApiError(401,"Invalid RefreshToken or Access",error)
+    }
+})
+
+export {registerUser,loginUser,logoutUser,refreshAccessToken}
