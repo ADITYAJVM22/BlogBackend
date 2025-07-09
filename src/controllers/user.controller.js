@@ -213,4 +213,66 @@ const changePassword=asyncHandler(async(req,res)=>{
 const getCurrentUser=asyncHandler(async (req,res)=>{
     return res.status(200).json(new ApiResponse(200,req.user,"User details fetched successfully"))
 })
-export {registerUser,loginUser,logoutUser,refreshAccessToken,changePassword,getCurrentUser}
+
+const updateUserDetails=asyncHandler(async(req,res)=>{
+    const {email,fullName}=req.body;
+    if(!email || !fullName){
+        throw new ApiError(400,"All fields are required")
+    }
+    try {
+        const user=await User.findByIdAndUpdate(req.user?._id,
+            {
+                $set:{
+                    email:email,
+                    fullName
+                }
+            },
+            {
+                new:true
+            }
+        ).select("-password")
+    
+        return res
+        .status(200)
+        .json(new ApiResponse(
+            200,
+            user,
+            "Details are updated"
+        ))
+    } catch (error) {
+        throw new ApiError(400,"error occurred:",error)
+    }
+})
+
+const updateUserAvatar=asyncHandler(async(req,res)=>{
+    const avatarLocalPath=req.file?.path
+    if(!avatarLocalPath){
+        throw new ApiError(400,"Avatar is required")
+    }
+    const avatar=await uploadOnCloudinary(avatarLocalPath)
+    if(!avatar) throw new ApiError(400,"problem uploading on cloud")
+    const user=await User.findByIdAndUpdate(req.user?._id,
+        {
+            $set:{
+                avatar:avatar.url
+            }
+        },
+        {
+            new:true
+        }
+    ).select("-password")
+    try {
+        deleteLocalFiles([avatarLocalPath])
+    } catch (error) {
+        throw new ApiError(400,"problem while deleting locally")
+    }
+
+    return res
+    .status(200)
+    .json(new ApiResponse(
+        200,
+        user,
+        "avatar updated successfully!!"
+    ))
+})
+export {registerUser,loginUser,logoutUser,refreshAccessToken,changePassword,getCurrentUser,updateUserDetails,updateUserAvatar}
